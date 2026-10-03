@@ -1,0 +1,3 @@
+interface:
+  display_name: "Hermes Email"
+  short_description: "通过共享文件邮箱让 Hermes 投递任务、Codex 持续执行并反馈结果"
