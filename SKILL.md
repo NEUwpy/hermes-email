@@ -3,9 +3,10 @@ name: hermes-email
 description: >
   Hermes 与 Codex 的本地文件邮箱协作。用于手机经 Hermes 投递任务、在固定
   Codex 对话中持续监听并执行指定项目的工作、查询状态、补充要求和反馈结果。
+  用户在任意 Codex 对话说“开始监听”时，可转到本机绑定的固定邮箱对话。
   使用可配置的共享目录和 Markdown 邮件，支持接单、完成、等待补充、失败与恢复。
 metadata:
-  version: "0.1.0"
+  version: "0.2.0"
   updated_at: "2026-10-03"
 ---
 
@@ -14,6 +15,14 @@ metadata:
 Hermes 整理、投递和反馈；Codex 执行。使用同一套技能，不引入审查者循环。
 源码版本见 [VERSION.json](VERSION.json)。首次配置读 [README.md](README.md)，
 命令及恢复操作读 [references/protocol.md](references/protocol.md)。
+
+## 从任意对话开始监听
+
+用户直接要求“开始监听”“恢复邮箱监听”时，先读
+[references/startup.md](references/startup.md)，用 `scripts/session.py route` 查本机绑定。
+在其他对话中将启动指令交给绑定的固定监听对话，并打开它；不在当前无关对话另起消费者。
+首次在邮箱项目的对话中验证并绑定一次，后续复用同一个 thread ID。
+询问“能否开始监听”的能力问题只解释或完善配置，不因此立即启动监听。
 
 ## 共同约定
 
@@ -43,7 +52,7 @@ Hermes 整理、投递和反馈；Codex 执行。使用同一套技能，不引�
 
 ## Codex：固定对话监听
 
-1. 在用户指定的邮箱项目、当前对话中进入模式。为该对话选择一个 worker ID，
+1. 经启动路由进入用户绑定的邮箱项目、固定对话。为该对话选择一个 worker ID，
    记住它，执行 `status`，再将模式设为 `auto`。不另建对话；不自动启动另一个 Codex。
 2. 调用 `wait --worker ID --timeout 30`。`timeout` 是空邮箱心跳，安静继续等待，
    不结束任务、不例行检查项目、不重复汇报“还在监听”。`paused/stopped` 时停止接单，

@@ -2,7 +2,7 @@
 
 手机上把任务交给 Hermes，Hermes 投递 Markdown 邮件；Codex 在固定对话中接单，
 执行邮件指定项目里的工作，留下结果，再通过 Hermes 回到手机会话。
-当前版本 **v0.1.0**，源码版本见 [VERSION.json](VERSION.json)，更新记录见 [CHANGELOG.md](CHANGELOG.md)。
+当前版本 **v0.2.0**，源码版本见 [VERSION.json](VERSION.json)，更新记录见 [CHANGELOG.md](CHANGELOG.md)。
 
 ```text
 手机 → Hermes → 邮箱 → 正在执行 → 执行完毕
@@ -53,6 +53,12 @@ python scripts/install.py --hermes-home 'E:\HermesProfile' --config 'E:\本机�
 `hermes skills list` 检查，手机会话可发 `/hermes-email` 加载，或直接要求使用该技能。
 
 ## 固定的监听项目和对话
+
+首次在下述固定对话中开始监听时，Codex 核实项目与对话身份并登记到本机配置。
+绑定后，在这台电脑的其他 Codex 对话说“开始监听”，Codex 会唤起这个固定对话并打开它。
+正在监听时只打开，避免重复启动；这条入口不要求每次另建对话。
+首次添加项目、建立固定对话只做一次；换电脑绑定各自的项目与对话。
+具体路由见 [references/startup.md](references/startup.md)。
 
 把本机邮箱目录添加为 Codex 项目，例如 `D:\Hermes Email`。在该项目中建立
 一个固定对话，发送：
@@ -121,7 +127,7 @@ python scripts/mailbox.py mode stopped
 
 - 修复用 patch；新增兼容能力用 minor；不兼容协议/配置变化用 major。
 - 更新时说明变更，执行测试，再提交源码并建立标签。
-- 下载已发布版本：`git checkout v0.1.0`；继续更新主线先 `git checkout main`。
+- 下载已发布版本：`git checkout v0.2.0`；继续更新主线先 `git checkout main`。
 - 本机更新：`git pull --ff-only`，再运行安装脚本检查链接和配置。已有配置与邮箱保留。
 
 ## 验证

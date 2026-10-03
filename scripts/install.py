@@ -77,7 +77,7 @@ def main():
         if not note.exists():
             note.write_text(
                 "# Hermes Email\n\n在 Codex 中把此目录添加为项目，并在一个固定对话里发送：\n\n"
-                f"```text\n使用 $hermes-email，配置文件是 {config_path}。进入邮箱监听模式。"
+                f"```text\n使用 $hermes-email，配置文件是 {config_path}。将这个对话登记为固定监听对话，进入邮箱监听模式。"
                 "在这个对话中逐件执行邮件指定项目里的任务，完成后继续监听，直到我暂停或停止。\n```\n\n"
                 "任务所在项目由每封邮件指定；邮箱项目用于接单与保留记录。\n",
                 encoding="utf-8")
