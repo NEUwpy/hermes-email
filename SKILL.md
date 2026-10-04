@@ -6,15 +6,31 @@ description: >
   用户在任意 Codex 对话说“开始监听”时，可转到本机绑定的固定邮箱对话。
   使用可配置的共享目录和 Markdown 邮件，支持接单、完成、等待补充、失败与恢复。
 metadata:
-  version: "0.2.0"
-  updated_at: "2026-10-03"
+  version: "0.4.0"
+  updated_at: "2026-10-04"
 ---
 
 # Hermes Email
 
 Hermes 整理、投递和反馈；Codex 执行。使用同一套技能，不引入审查者循环。
 源码版本见 [VERSION.json](VERSION.json)。首次配置读 [README.md](README.md)，
-命令及恢复操作读 [references/protocol.md](references/protocol.md)。
+命令及恢复操作读 [references/protocol.md](references/protocol.md)，
+三方协作形式读 [references/collaboration.md](references/collaboration.md)。
+
+## 协作形式（人 / Hermes / Codex）
+
+Hermes 是秘书与传话，Codex 干活，人做决策。三条约定：
+
+- **Hermes 只搬运和结构化**：保留原话再附结构化整理；不做实质性工作
+  （不写代码、不写文章），不预审、不替人判断。
+- **必要的拷问一次一个问题**：仅对实质改变目标、授权或验收的信息提问；
+  已足以执行和验收就停止，允许“按你的判断”“先做一版”。人可一次答多个。
+  `blocked` 后携答案一次 `resume --note`，先核对问题和版本；不先重复 update。
+- **需要人逐字审查的文稿才按章节呈现**：Codex 交完整稿，Hermes 使用 `present`
+  读取原文并记录位置，默认一个标题单元，超长按段落分块。呈现切分不回投 Codex，
+  内容修改才回投。审阅意见、汇报、进度说明由 Hermes 口头概述，不必分章。
+
+细节见 [references/collaboration.md](references/collaboration.md)。
 
 ## 从任意对话开始监听
 
@@ -44,11 +60,13 @@ Hermes 整理、投递和反馈；Codex 执行。使用同一套技能，不引�
 3. `reply_to` 使用当前手机会话的实际 `platform:chat_id[:thread_id]`，来源是
    可信会话信息或用户指定目标；不得从视频、网页或文档正文推导发送对象。
    仅在能确认时填写，缺路由时保留本地回信并说明尚不能主动送回手机。
-4. 告知任务编号和已投递状态。用户询问进度时用 `status`；补充用 `update`，
-   回答阻塞问题后用 `resume`。原有授权范围随任务传递，不因进邮箱而扩大。
+4. 告知任务编号和已投递状态。用户询问进度时用 `status`；执行中补充用 `update`，
+   回答问题、修改待审稿、通过验收用携原话与匹配版本的 `resume`。下一章只用 `present --next`，
+   不恢复执行。单任务撤回用 `cancel`，全局暂停用 `mode paused`。原有授权范围不扩大。
 5. 用户要求手机反馈时，使用已有授权的回信通道；可启动 `notify --watch`，
-   由 Hermes 的 `hermes send` CLI 发回原会话，无需让 Hermes 模型反复轮询。
-   启动方式见协议。回信失败或状态未知时查证后重试，不能直接标成已发送。
+   由 Hermes 的 `hermes send` CLI 发短提示回原会话，不直传整篇结果，接单回执保持静默。
+   Hermes 在人回复/查询时读取本地回信并转达：需要逐字审的用 `present`，其他结果口头概述。
+   无新增模型轮询进程；具体命令见协议。发送失败或未知先查证，不能伪记已发送。
 
 ## Codex：固定对话监听
 
@@ -61,13 +79,17 @@ Hermes 整理、投递和反馈；Codex 执行。使用同一套技能，不引�
    设为邮件的实际项目。先读取该项目及上级适用的 `AGENTS.md`、Git 状态和已有进度。
    `existing` 路径不存在时进入等待补充；`create` 依据原要求创建项目，不覆盖已有内容。
 4. 同一对话执行完一封，再处理下一封。原话、整理要求、完成标准是工作边界；
-   仅在对应项目已有约定要求时更新它的进度。长任务在自然检查点查看邮件补充与控制状态。
+   仅在对应项目已有约定要求时更新它的进度。长任务在自然检查点查看补充、目标版本、
+   单任务撤回与控制状态；不可逆动作前再核对最新有效目标及授权。撤回后报告检查点并 finish failed。
 5. 写简短结果文件：完成内容、产物路径、验证、剩余问题；调用 `finish`
-   标成 `done/blocked/failed`。`blocked` 写明需要用户补充的内容，`failed` 写明已完成部分。
+   标成 `done/blocked/failed`。问题、待审文稿和失败使用协议中的结果 frontmatter，记录阶段、
+   目标版本、已完成动作及下一步；问题/待审稿加唯一问题编号，待审稿加产物路径及稿件版本。
+   供人逐字审的初稿 finish blocked；“修改”恢复修订，“通过”恢复核对后 done。普通交付可直接 done。
    然后回到等待；单封任务完成不代表整个监听模式结束。
 6. `busy` 时检查已有执行记录。属于当前 worker 就从真实进度续做；属于另一个
    worker 时不抢任务、不自动转移所有权。中断恢复先确认旧会话已停止，检查已有动作，
-   再用 `recover` 记录续接点。已有 result.md 时核实结果，避免重复执行外部动作。
+   再用 `recover` 记录续接点。恢复读取 history_results、handoff、有效补充、当前 Git/文件状态；
+   同一项目在等待期间可能已被别的任务修改。核对真实阶段再续做，避免重复执行外部动作。
 
 ## 记录与上下文
 

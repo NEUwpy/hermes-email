@@ -2,14 +2,30 @@
 
 手机上把任务交给 Hermes，Hermes 投递 Markdown 邮件；Codex 在固定对话中接单，
 执行邮件指定项目里的工作，留下结果，再通过 Hermes 回到手机会话。
-当前版本 **v0.2.0**，源码版本见 [VERSION.json](VERSION.json)，更新记录见 [CHANGELOG.md](CHANGELOG.md)。
+当前工作区版本 **v0.4.0**，源码版本见 [VERSION.json](VERSION.json)，更新记录见 [CHANGELOG.md](CHANGELOG.md)。
 
 ```text
 手机 → Hermes → 邮箱 → 正在执行 → 执行完毕
                          ├→ 等待补充
                          └→ 执行失败
-手机 ← Hermes send ← 回信/待发送
+手机 ← 短提示 / Hermes 按需呈现 ← 本地回信与稿件快照
 ```
+
+## 协作形式
+
+人做决策，Hermes 做秘书与传话，Codex 干活。三条约定（完整说明见
+[references/collaboration.md](references/collaboration.md)）：
+
+- **Hermes 只搬运和结构化**：保留人的原话再附结构化整理；不做实质性工作
+  （不写代码、不写文章），不预审、不替人判断。
+- **必要的拷问一次一个问题**：只问影响目标、授权或验收的信息，已足以执行和验收就停止。
+  人可一次答多个，也可要求“按你的判断”“先做一版”；携答案一次 resume，不重复 update。
+- **需要人逐字审查的文稿才按章节呈现**：完整供审稿用 blocked 留档，Hermes 用 present
+  读取原文并记录位置；“下一章”只推进阅读，“修改/通过”分别恢复修订或核对验收。
+  审阅意见、汇报、进度说明由 Hermes 口头概述，不必分章；内容修改仍交给 Codex。
+
+接单、普通进度默认静默；自动回信只推需要回答、待审稿、结果或失败的短提示。
+完整结果留本地供 Hermes 读取，逐字审稿按人请求推进章节，不自动直传整篇。
 
 ## 安装到另一台电脑
 
@@ -84,7 +100,7 @@ Skill 需要一个正在工作的 Codex 会话。电脑休眠、应用关闭或�
 
 ```text
 使用 Hermes Email，给 Codex 发邮件：继续 D:\我的项目 里的现有进度，完成……，
-完成标准是……。接单和结果回到当前手机会话。
+完成标准是……。需要回答和结果提示回到当前手机会话。
 ```
 
 Hermes 保留原话，整理任务，写入邮箱并返回任务编号。补充要求时带上编号。
@@ -97,7 +113,9 @@ python scripts/mailbox.py notify --watch
 ```
 
 它只检查目录并调用 Hermes 官方 `hermes send` CLI，不轮询模型。
-新接单、完成、等待补充或失败都会产生回执；Hermes CLI 成功发送后归档。
+每次状态变化保留回执；接单回执不发送，也不伪记为已发送。
+只发送最多1200字符的动作提示，成功后归档；完整 result.md 不直接发手机。
+Hermes 在人查询/回复时读取本地结果，逐字审的文稿用 present，其他交付口头概述。
 如平台需要在线网关，遵循 Hermes 的平台要求。首次使用应实际验证手机收到测试任务结果。
 创建技能和脚本的本地测试不会冒充手机收件验证。
 
@@ -113,10 +131,12 @@ python scripts/mailbox.py replies
 python scripts/mailbox.py mode paused
 python scripts/mailbox.py mode auto
 python scripts/mailbox.py mode stopped
+# 单独撤回一项任务（不暂停其他邮件）：
+python scripts/mailbox.py cancel --task-id TASK_ID --note 'D:\Hermes Email\撤回原话.md'
 ```
 
 也可直接在 Codex 监听对话或手机 Hermes 会话里说“暂停接单”“恢复监听”“停止”。
-暂停不删除邮件；停止也使回信 helper 退出。正在执行的工作在自然检查点响应。
+暂停不删除邮件；停止也使回信 helper 退出。撤回仅针对指定任务；正在执行的工作在自然检查点响应。
 
 ## Git 与版本
 
@@ -128,6 +148,7 @@ python scripts/mailbox.py mode stopped
 - 修复用 patch；新增兼容能力用 minor；不兼容协议/配置变化用 major。
 - 更新时说明变更，执行测试，再提交源码并建立标签。
 - 下载已发布版本：`git checkout v0.2.0`；继续更新主线先 `git checkout main`。
+- v0.4.0 此次仅保留在工作区，未提交、未打标签；版本字段不表示已经发布。
 - 本机更新：`git pull --ff-only`，再运行安装脚本检查链接和配置。已有配置与邮箱保留。
 
 ## 验证
@@ -138,6 +159,7 @@ python -m unittest discover -s tests -v
 
 测试使用系统临时目录和假的发信端，覆盖投递、竞争接单、逐件执行、完成回执、
 阻塞恢复、失败记录、回信发送失败/未知状态，以及带空格路径的安装与 CLI 往返。
+新增覆盖逐章原文重组、超长块、稿件快照、修改/通过重新接单、迟到回答、改目标和单任务撤回。
 不会向真实手机发送消息。
 
 参考：[Codex 技能目录](https://learn.chatgpt.com/docs/build-skills)、
