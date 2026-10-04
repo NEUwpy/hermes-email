@@ -6,7 +6,7 @@ description: >
   用户在任意 Codex 对话说“开始监听”时，可转到本机绑定的固定邮箱对话。
   使用可配置的共享目录和 Markdown 邮件，支持接单、完成、等待补充、失败与恢复。
 metadata:
-  version: "0.5.0"
+  version: "0.6.0"
   updated_at: "2026-10-04"
 ---
 
@@ -31,6 +31,9 @@ Hermes 是秘书与传话，Codex 干活，人做决策。三条约定：
   内容修改才回投。审阅意见、汇报、进度说明由 Hermes 口头概述，不必分章。
 
 细节见 [references/collaboration.md](references/collaboration.md)。
+
+目标较大或人说得不够清楚时，主动让 Codex 用 `grilling` 把目标对齐再动手；小事直接做。
+人提审文稿时按 **结构 → 逻辑 → 表述** 三步走，结构不合理先打回重做，不跳步。
 
 ## 从任意对话开始监听
 

@@ -2,7 +2,7 @@
 
 手机上把任务交给 Hermes，Hermes 投递 Markdown 邮件；Codex 在固定对话中接单，
 执行邮件指定项目里的工作，留下结果，再通过 Hermes 回到手机会话。
-当前工作区版本 **v0.5.0**，源码版本见 [VERSION.json](VERSION.json)，更新记录见 [CHANGELOG.md](CHANGELOG.md)。
+当前版本 **v0.6.0**，源码版本见 [VERSION.json](VERSION.json)，更新记录见 [CHANGELOG.md](CHANGELOG.md)。
 
 ```text
 手机 → Hermes → 邮箱 → 正在执行 → 执行完毕
@@ -26,6 +26,9 @@
 
 默认不推任何回执，状态直接留内部记录。Hermes 用 brief 一次查询状态、问题和结果要点，
 再直接用自己的话告诉人；逐字审稿按人请求呈现原文。主动提醒开关默认关闭。
+
+目标较大或人说得不清楚时，主动让 Codex 用 `grilling` 对齐目标再动手；小事直接做。
+人提审文稿时按 **结构 → 逻辑 → 表述** 三步走，结构不合理先打回重做。
 
 ## 安装到另一台电脑
 
