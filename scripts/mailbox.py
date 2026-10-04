@@ -137,11 +137,11 @@ class Mailbox:
             raise ValueError("Keep the mailbox outside the skill Git repository")
 
     def initialize(self):
-        for name in [*STATES.values(), "回信/待发送", "回信/已发送", ".staging"]:
+        for name in [*STATES.values(), "回信/记录", "回信/已发送", ".staging"]:
             (self.root / name).mkdir(parents=True, exist_ok=True)
         with self.lock():
             if not (self.root / "control.json").exists():
-                write_json(self.root / "control.json", {"mode": "paused", "updated_at": now()})
+                write_json(self.root / "control.json", {"mode": "paused", "push_enabled": False, "updated_at": now()})
         return self.status()
 
     @contextlib.contextmanager
@@ -249,9 +249,9 @@ class Mailbox:
         meta, _ = unpack(folder / "task.md")
         execution = read_json(folder / "execution.json")
         receipt_id = f"{meta['task_id']}.{execution['attempt']}.{state}"
-        pending = self.root / "回信/待发送" / f"{receipt_id}.md"
+        pending = self.root / "回信/记录" / f"{receipt_id}.md"
         sent = self.root / "回信/已发送" / f"{receipt_id}.md"
-        if pending.exists() or sent.exists():
+        if pending.exists() or sent.exists() or (self.root / "回信/待发送" / pending.name).exists():
             return
         result = (folder / "result.md").read_text(encoding="utf-8") if state != "running" and (folder / "result.md").exists() else "Codex 已接单。"
         handoff = read_json(folder / "handoff.json") if (folder / "handoff.json").exists() else {}
@@ -516,28 +516,73 @@ class Mailbox:
         if mode not in ("auto", "paused", "stopped"):
             raise ValueError("Invalid mode")
         with self.lock():
-            write_json(self.root / "control.json", {"mode": mode, "updated_at": now()})
+            control = read_json(self.root / "control.json")
+            write_json(self.root / "control.json", {**control, "mode": mode, "updated_at": now()})
         return {"event": mode}
 
+    def push(self, enabled):
+        with self.lock():
+            control = read_json(self.root / "control.json")
+            write_json(self.root / "control.json", {**control, "push_enabled": enabled,
+                       "push_since": now() if enabled and not control.get("push_enabled") else control.get("push_since", "")})
+        return {"event": "push_enabled" if enabled else "push_disabled"}
+
+    def archive_legacy(self):
+        """Retire the old delivery queue without pretending anything was sent."""
+        legacy, records = self.root / "回信/待发送", self.root / "回信/记录"
+        records.mkdir(parents=True, exist_ok=True)
+        with self.lock("notifier"):
+            if legacy.exists():
+                for path in sorted(legacy.iterdir()):
+                    if path.is_file():
+                        destination = records / path.name
+                        if destination.exists():
+                            raise ValueError(f"Conflicting legacy record kept intact: {path}")
+                        path.rename(destination)
+
+    def brief(self, task_id):
+        self.status()
+        with self.lock():
+            state, folder = self.find(task_id)
+            task = self.describe(state, folder)
+            handoff = task["handoff"]
+            result = (folder / "result.md").read_text(encoding="utf-8") if task["result_path"] else ""
+            fingerprint = hashlib.sha256((state + str(task["execution"].get("attempt")) + task["goal_version"] + str(task["cancellation"]) + result).encode("utf-8")).hexdigest()
+            seen = folder / "relay.json"
+            changed = not seen.exists() or read_json(seen)["fingerprint"] != fingerprint
+            write_json(seen, {"fingerprint": fingerprint, "read_at": now()})
+            body = unpack_text(result)[1] if result.startswith("---\n") else result
+            summary = handoff.get("notice") or next((line for line in body.splitlines() if line.strip() and not line.startswith("#")), "")
+            return {"event": "brief", "task_id": task_id, "title": task["title"], "state": state,
+                    "changed_since_last_read": changed, "new_result": bool(result) and changed,
+                    "needs_answer": state == "blocked" and not task["cancellation"],
+                    "awaiting_review": state == "blocked" and handoff.get("kind") == "review" and not task["cancellation"],
+                    "summary": summary[:800], "question": handoff.get("prompt", "") if state == "blocked" else "",
+                    "result_path": task["result_path"], "phase": handoff.get("phase"),
+                    "completed_actions": handoff.get("completed_actions", []), "next_step": handoff.get("next_step"),
+                    "question_id": handoff.get("question_id"), "goal_version": task["goal_version"],
+                    "artifact_version": handoff.get("artifact_version"), "cancellation": task["cancellation"]}
+
     def status(self):
+        self.archive_legacy()
         with self.lock():
             for state in STATES:
                 for folder in self.folders(state):
                     self.receipt(state, folder)
             return {"root": str(self.root), "control": read_json(self.root / "control.json"),
                     "tasks": [self.describe(state, folder) for state in STATES for folder in self.folders(state)],
-                    "pending_replies": len(list((self.root / "回信/待发送").glob("*.md")))}
+                    "pending_replies": 0}
 
     def replies(self):
         self.status()  # Repair a receipt interrupted after an atomic state move.
         return [{**unpack(p)[0], "path": str(p), "delivery": read_json(p.with_suffix(".json"))
-                 if p.with_suffix(".json").exists() else {"state": "pending"}}
-                for p in sorted((self.root / "回信/待发送").glob("*.md"))]
+                  if p.with_suffix(".json").exists() else {"state": "internal"}}
+                for p in sorted((self.root / "回信/记录").glob("*.md"))]
 
     def acknowledge(self, receipt_id, note):
         if not re.fullmatch(r"[A-Za-z0-9_.-]+", receipt_id) or not note.strip():
             raise ValueError("Valid receipt id and delivery evidence required")
-        pending = self.root / "回信/待发送" / f"{receipt_id}.md"
+        pending = self.root / "回信/记录" / f"{receipt_id}.md"
         sent = self.root / "回信/已发送" / pending.name
         with self.lock("notifier"):
             if sent.exists():
@@ -548,15 +593,21 @@ class Mailbox:
         return {"event": "acknowledged", "receipt_id": receipt_id}
 
     def notify(self, command, sender=None, hermes_home=None):
-        """No LLM polling. Failed/ambiguous sends require inspection before retry."""
-        self.status()
+        """Optional one-shot reminder; default relay never invokes a sender."""
+        control = self.status()["control"]
+        if not control.get("push_enabled", False) or control["mode"] == "stopped":
+            return {"event": "push_disabled", "events": []}
+        if not isinstance(command, list) or not command or any(not isinstance(x, str) for x in command):
+            raise ValueError("hermes_command must be a nonempty argv list")
         events = []
         send_environment = {**os.environ, "PYTHONIOENCODING": "utf-8"}
         if hermes_home:
             send_environment["HERMES_HOME"] = str(Path(hermes_home).expanduser().resolve())
         with self.lock("notifier"):
-            for path in sorted((self.root / "回信/待发送").glob("*.md"), key=lambda p: unpack(p)[0]["created_at"]):
+            for path in sorted((self.root / "回信/记录").glob("*.md"), key=lambda p: unpack(p)[0]["created_at"]):
                 meta, body = unpack(path)
+                if meta["created_at"] < control.get("push_since", ""):
+                    continue  # Opening reminders does not replay the audit history.
                 record = path.with_suffix(".json")
                 # Keep internal receipts local, including pre-v0.4 running receipts.
                 if meta["state"] == "running" or meta.get("kind") == "internal":
@@ -580,9 +631,10 @@ class Mailbox:
                         destination = self.root / "回信/已发送" / path.name
                         path.rename(destination)
                         record.rename(destination.with_suffix(".json"))
-                    else:
+                        continue
+                    if delivery["state"] != "internal":
                         events.append({"event": "needs_delivery_review", "receipt_id": meta["receipt_id"]})
-                    continue
+                        continue
                 write_json(record, {"state": "sending", "at": now()})
                 try:
                     runner = sender or subprocess.run
@@ -607,7 +659,7 @@ class Mailbox:
         if not re.fullmatch(r"[A-Za-z0-9_.-]+", receipt_id):
             raise ValueError("Invalid receipt id")
         with self.lock("notifier"):
-            record = self.root / "回信/待发送" / f"{receipt_id}.json"
+            record = self.root / "回信/记录" / f"{receipt_id}.json"
             previous = read_json(record)
             if previous["state"] not in ("failed", "unknown", "sending"):
                 raise ValueError("Only failed/unknown/interrupted delivery can be retried")
@@ -649,6 +701,10 @@ def main():
     present.add_argument("--task-id", required=True)
     present.add_argument("--next", action="store_true")
     present.add_argument("--max-chars", type=int, default=2000)
+    brief = sub.add_parser("brief")
+    brief.add_argument("--task-id", required=True)
+    push = sub.add_parser("push")
+    push.add_argument("mode", choices=["on", "off"])
     mode = sub.add_parser("mode")
     mode.add_argument("mode", choices=["auto", "paused", "stopped"])
     ack = sub.add_parser("ack")
@@ -656,9 +712,7 @@ def main():
     ack.add_argument("--note", required=True)
     retry = sub.add_parser("retry-reply")
     retry.add_argument("--receipt-id", required=True)
-    notify = sub.add_parser("notify")
-    notify.add_argument("--watch", action="store_true")
-    notify.add_argument("--interval", type=float, default=5)
+    sub.add_parser("notify")
     args = parser.parse_args()
     try:
         if args.action == "version":
@@ -688,28 +742,16 @@ def main():
                 result = mailbox.cancel(args.task_id, Path(args.note).read_text(encoding="utf-8-sig"))
             elif args.action == "present":
                 result = mailbox.present(args.task_id, args.next, args.max_chars)
+            elif args.action == "brief":
+                result = mailbox.brief(args.task_id)
+            elif args.action == "push":
+                result = mailbox.push(args.mode == "on")
             elif args.action == "ack":
                 result = mailbox.acknowledge(args.receipt_id, args.note)
             elif args.action == "retry-reply":
                 result = mailbox.retry_reply(args.receipt_id)
             elif args.action == "notify":
-                if not 1 <= args.interval <= 60:
-                    raise ValueError("interval must be between 1 and 60 seconds")
-                command = config.get("hermes_command", ["hermes"])
-                if not isinstance(command, list) or not command or any(not isinstance(x, str) for x in command):
-                    raise ValueError("hermes_command must be a nonempty argv list")
-                last_events = None
-                while True:
-                    if read_json(mailbox.root / "control.json")["mode"] == "stopped":
-                        result = {"event": "stopped"}
-                        break
-                    result = mailbox.notify(command, hermes_home=config.get("hermes_home"))
-                    if not args.watch:
-                        break
-                    if result["events"] and result["events"] != last_events:
-                        print(json.dumps(result, ensure_ascii=False), flush=True)
-                    last_events = result["events"]
-                    time.sleep(args.interval)
+                result = mailbox.notify(config.get("hermes_command", ["hermes"]), hermes_home=config.get("hermes_home"))
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return 0
     except KeyboardInterrupt:

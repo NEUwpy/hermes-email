@@ -140,50 +140,40 @@ answer_id 可选，但自动重试时保持同一编号与文本，脚本只记�
 不先换另一份答案；answer_id 避免完成排队后的重复记录。
 旧版无 handoff 门槛的邮件允许原来的纯文本恢复；Hermes 必须人工核对，无法自动校验旧问题编号。
 
-## 手机回信
+## Hermes 读取与可选主动提醒
 
-本机必须有支持 `hermes send` 的 Hermes CLI，凭据继续由 Hermes 管理。
-默认配置的 `hermes_command` 是 argv 数组，调用时不用 shell 拼接消息。
-每次状态变化保留带任务编号的 Markdown 回执，放在 `回信/待发送/`。
-接单回执 kind=internal，静默保留且不生成虚假的 sent 记录。
-通知只发 question/review/result/failure 的 human_message（最多1200字符），不发完整正文；
-旧版回执也按状态过滤并替换为短提示。过时/已恢复的阻塞或失败回执、撤回前的问题不再催问。
-待发送计数包含内部静默记录，不能直接当作手机发送故障计数。
-Hermes 在人查询/回复时读取完整回信：逐字审稿调用 present；审阅意见、汇报、进度说明口头概述。
+默认不发送任何回执。状态变化直接留在 `回信/记录/`，供内部审计；旧 `回信/待发送/` 中的文件由 status 自动迁入记录，原文及已有发送证据保留，不伪记为已发送。
 
 ```powershell
-python $mail replies
+python $mail brief --task-id video-notes-001
+python $mail replies  # 内部记录和已有送达状态，不是待投递队列
+```
+
+brief 一次返回当前状态、changed_since_last_read、new_result、needs_answer、问题、结果路径及要点/阶段/下一步。Hermes 在人查询、回复或当前活跃回合需要了解任务时查一次，必要时读完整结果，再直接用自己的话告诉人；逐字审稿用 present，不转发系统回执。
+
+new_result 表示相对上次本地 brief 读取有新结果，relay.json 只记读取位置，不表示已经向人表达或人已阅读。人暂未询问且 Hermes 无活跃回合时，默认没有自动完成提醒。不新增后台守护、不常驻轮询。
+
+人明确需要主动提醒时才用以下可选路径：
+
+```powershell
+python $mail push on
+# 开启后的新状态变化发生后，手动执行一次：
 python $mail notify
-# 持续等待新回信的轻量进程，5 秒一次目录检查，不调用模型：
-python $mail notify --watch
+python $mail push off
 ```
 
-用户启动本模式并要求手机反馈后，可以启动一个隐藏 helper；Windows 示例：
+push_enabled 位于邮箱 control.json，默认 false（旧配置缺键也按 false）；不影响接单 auto/paused。notify 默认立即返回 push_disabled，绝不调用发送器。开启后只提醒 push_since 之后的新状态变化，不补推历史审计记录。notify 是一次性命令；已移除 --watch/--interval，不再提供常驻发送循环。
 
-```powershell
-$mailPython = (Get-Command python).Source
-$mailLog = 'D:\Hermes Email\notifier.stdout.log'
-$mailErr = 'D:\Hermes Email\notifier.stderr.log'
-Start-Process -FilePath $mailPython -WindowStyle Hidden `
-  -ArgumentList @('"' + $mail + '"', 'notify', '--watch') `
-  -RedirectStandardOutput $mailLog -RedirectStandardError $mailErr
-```
+开启时仅 question/review/result/failure 发最多1200字符的短提示，接单、过时问题和撤回前的信息仍只留内部记录。此时才要求可信 reply_to、Hermes CLI 和平台在线网关；默认转达不依赖 hermes send。命令以 argv 调用，中文按 UTF-8 传递。配置自定义路径的 --config 放在子命令前。
 
-启动前检查现有 helper，避免重复启动；也可以在 Hermes 的持久终端会话运行。
-配置文件有自定义位置时传 `--config`，它必须位于子命令前。
-短提示通过 `hermes send --to 原路由 --file - --json`，成功退出后该回执移至 `回信/已发送/`。
-这代表提示发送，不代表完整稿件已呈现、已阅读或已验收。
-成功表示 Hermes CLI 报告发送成功，不等同于用户已阅读。平台需要 live gateway 时，
-仍遵循 Hermes 自身要求；`hermes send --help` 可检查本机支持。
-
-失败留在待发送并记录退出码；超时或中断记为 unknown/sending，自动发送器不会盲目重试。
-在手机会话或平台记录中核实后：
+CLI 成功后该记录移到 `回信/已发送/`；这仅表示提示发送，不表示完整稿件已经呈现、已读或验收。失败/unknown/sending 明确保存在内部记录的送达 sidecar，不会自动盲目重试，也不会滞留在待投递目录。缺路由只保留内部记录。核实实际平台记录后可用 retry-reply 或附证据 ack，不能伪记发送：
 
 ```powershell
 python $mail retry-reply --receipt-id video-notes-001.1.done
-python $mail notify
+python $mail notify  # 仍须开关 on，且仅发送开启后产生的记录
 python $mail ack --receipt-id video-notes-001.1.done --note '原手机会话已发送，附平台消息编号'
 ```
+
 
 ## 暂停、补充、恢复
 
@@ -197,7 +187,7 @@ python $mail recover --task-id video-notes-001 --worker codex-mail-02 --note 'D:
 python $mail cancel --task-id video-notes-001 --note 'D:\Hermes Email\撤回原话.md'
 ```
 
-`paused` 阻止新接单，正在执行的任务在自然检查点响应；`stopped` 也让回信 helper 退出。
+`paused` 阻止新接单，正在执行的任务在自然检查点响应；`stopped` 也阻止可选的主动提醒。
 `resume` 只将等待补充/失败的任务重新排队，并保留上一次结果；
 history_results 返回历史 result-attempt-N.md，handoff 保留阶段、版本、已做动作与回复动作。
 恢复必须读取这些记录、当前 Git/文件状态与全部有效补充，不能因恢复就从头重跑。

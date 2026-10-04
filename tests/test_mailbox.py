@@ -101,6 +101,7 @@ class MailboxTests(unittest.TestCase):
         self.assertEqual(self.mail.claim("codex")["event"], "task")
 
     def test_notification_success_acknowledges_after_sender_only(self):
+        self.mail.push(True)
         self.mail.send(self.payload())
         self.mail.claim("codex")
         self.mail.finish("task-001", "codex", "done", "完成")
@@ -121,6 +122,7 @@ class MailboxTests(unittest.TestCase):
         self.assertEqual(len(list((self.mail.root / "回信/已发送").glob("*.md"))), 1)
 
     def test_failed_delivery_is_not_silently_retried(self):
+        self.mail.push(True)
         self.mail.send(self.payload())
         self.mail.claim("codex")
         self.mail.finish("task-001", "codex", "failed", "失败详情留在本地")
@@ -140,6 +142,7 @@ class MailboxTests(unittest.TestCase):
         self.assertEqual(len(calls), 2)
 
     def test_timeout_delivery_stays_unknown(self):
+        self.mail.push(True)
         self.mail.send(self.payload())
         self.mail.claim("codex")
         self.mail.finish("task-001", "codex", "done", "完成")
@@ -163,6 +166,7 @@ class MailboxTests(unittest.TestCase):
         self.assertEqual({r["state"] for r in self.mail.replies()}, {"running", "done"})
 
     def test_missing_route_remains_local_and_create_mode_is_recorded(self):
+        self.mail.push(True)
         payload = self.payload(route="")
         payload["project_mode"] = "create"
         self.mail.send(payload)
@@ -209,6 +213,7 @@ class MailboxTests(unittest.TestCase):
                 path.unlink()
 
     def test_end_to_end_temporary_git_project_and_real_sender_process(self):
+        self.mail.push(True)
         project = self.base / "真实 项目"
         project.mkdir()
         subprocess.run(["git", "init", "-q", str(project)], check=True, capture_output=True)
@@ -319,6 +324,7 @@ class MailboxTests(unittest.TestCase):
             self.mail.update("task-001", "再次修改")
 
     def test_changed_goal_and_late_answers_are_rejected(self):
+        self.mail.push(True)
         self.mail.send(self.payload())
         self.mail.claim("codex")
         question = self.context("question", question_id="q1", prompt="请确认目标")
@@ -357,6 +363,7 @@ class MailboxTests(unittest.TestCase):
         self.assertEqual(self.mail.claim("codex")["event"], "empty")
 
     def test_notification_is_short_retained_and_never_full_draft(self):
+        self.mail.push(True)
         self.mail.send(self.payload())
         self.mail.claim("codex")
         draft = self.base / "论文.md"
@@ -370,7 +377,7 @@ class MailboxTests(unittest.TestCase):
         self.assertNotIn("正文不可省略", sent[0])
         internal = self.mail.replies()[0]
         self.assertEqual(internal["kind"], "internal")
-        self.assertEqual(internal["delivery"]["state"], "pending")
+        self.assertEqual(internal["delivery"]["state"], "internal")
         folder = self.mail.find("task-001")[1]
         self.assertEqual((folder / "result.md").read_text(encoding="utf-8"), result)
         self.assertEqual(self.mail.notify(["never-called"])["events"], [])
@@ -408,6 +415,7 @@ class MailboxTests(unittest.TestCase):
         self.assertEqual(len(claimed["history_results"]), 1)
 
     def test_legacy_receipts_are_filtered_and_never_sent_as_full_text(self):
+        self.mail.push(True)
         self.mail.send(self.payload())
         self.mail.claim("codex")
         self.mail.finish("task-001", "codex", "done", "机密长稿内容" * 500)
@@ -428,6 +436,85 @@ class MailboxTests(unittest.TestCase):
         chunk = module.reading_chunk(text, 0, 200)
         self.assertIn("$$\nx=1\n\n+y\n$$", chunk["text"])
         self.assertEqual(chunk["text"] + module.reading_chunk(text, chunk["end_line"], 200)["text"], text)
+
+    def test_default_relay_never_invokes_sender_and_has_no_delivery_queue(self):
+        self.mail.send(self.payload())
+        self.mail.claim("codex")
+        self.mail.finish("task-001", "codex", "done", "工作已完成")
+        with patch.object(module.subprocess, "run", side_effect=AssertionError("default must not send")) as runner:
+            self.assertEqual(self.mail.notify(["not-called"])["event"], "push_disabled")
+            runner.assert_not_called()
+        sender = self.base / "发送端探针.py"
+        canary = self.base / "已调用发送端.txt"
+        sender.write_text("import sys\nfrom pathlib import Path\nPath(sys.argv[1]).write_text('called')\n", encoding="utf-8")
+        config = self.base / "关闭推送配置.json"
+        module.write_json(config, {"mailbox_root": str(self.mail.root), "hermes_command": [sys.executable, str(sender), str(canary)]})
+        completed = subprocess.run([sys.executable, str(SCRIPT), "--config", str(config), "notify"], capture_output=True, text=True, encoding="utf-8", timeout=15)
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(json.loads(completed.stdout)["event"], "push_disabled")
+        self.assertFalse(canary.exists())
+        self.assertEqual(self.mail.status()["pending_replies"], 0)
+        self.assertFalse(list((self.mail.root / "回信/待发送").glob("*")))
+        self.assertEqual(len(list((self.mail.root / "回信/记录").glob("*.md"))), 2)
+        self.assertTrue(all(r["delivery"]["state"] == "internal" for r in self.mail.replies()))
+
+    def test_legacy_dead_letters_are_archived_without_fake_delivery(self):
+        self.mail.send(self.payload())
+        self.mail.claim("codex")
+        record = Path(self.mail.replies()[0]["path"])
+        content = record.read_bytes()
+        legacy = self.mail.root / "回信/待发送"
+        legacy.mkdir()
+        record.rename(legacy / record.name)
+        self.mail.status()
+        self.mail.status()
+        self.assertEqual(record.read_bytes(), content)
+        self.assertFalse(list(legacy.iterdir()))
+        self.assertFalse(record.with_suffix(".json").exists())
+        self.assertFalse(list((self.mail.root / "回信/已发送").glob("*")))
+        self.mail.push(True)
+        self.assertEqual(self.mail.notify(["not-called"])["events"], [])
+
+    def test_brief_reports_changes_question_and_result_without_sending(self):
+        self.mail.send(self.payload())
+        self.mail.claim("codex")
+        first = self.cli("brief", "--task-id", "task-001")
+        self.assertEqual(first["state"], "running")
+        self.assertFalse(first["new_result"])
+        self.assertFalse(self.mail.brief("task-001")["changed_since_last_read"])
+        self.mail.finish("task-001", "codex", "blocked", module.pack(self.context("question", question_id="q1", prompt="确认目标？"), "需要确认"))
+        question = self.mail.brief("task-001")
+        self.assertTrue(question["new_result"])
+        self.assertTrue(question["needs_answer"])
+        self.assertEqual(question["question"], "确认目标？")
+        self.assertTrue(self.mail.brief("task-001")["needs_answer"])
+        self.mail.update("task-001", self.answer("answer"), resume=True)
+        self.mail.claim("codex")
+        self.mail.finish("task-001", "codex", "done", module.pack(self.context("result", notice="已完成，可交付"), "完整结果"))
+        final = self.mail.brief("task-001")
+        self.assertEqual(final["summary"], "已完成，可交付")
+        self.assertFalse(final["needs_answer"])
+        self.assertTrue(Path(final["result_path"]).is_file())
+        self.assertFalse(self.mail.brief("task-001")["new_result"])
+
+    def test_push_requires_explicit_on_preserves_mode_and_avoids_history_replay(self):
+        self.mail.send(self.payload())
+        self.mail.claim("codex")
+        self.mail.finish("task-001", "codex", "done", "历史结果")
+        self.cli("push", "on")
+        self.mail.mode("paused")
+        self.assertTrue(self.mail.status()["control"]["push_enabled"])
+        self.mail.mode("auto")
+        self.mail.send(self.payload("task-002"))
+        self.mail.claim("codex")
+        self.mail.finish("task-002", "codex", "done", "新结果")
+        sent = []
+        self.mail.notify(["fake"], lambda argv, **kw: (sent.append(kw["input"]) or subprocess.CompletedProcess(argv, 0)))
+        self.assertEqual(len(sent), 1)
+        self.assertIn("task-002", sent[0])
+        self.cli("push", "off")
+        self.assertEqual(self.mail.notify(["not-called"])["event"], "push_disabled")
+        self.assertEqual(self.mail.status()["control"]["mode"], "auto")
 
 
 if __name__ == "__main__":
