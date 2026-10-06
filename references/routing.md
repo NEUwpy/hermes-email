@@ -9,6 +9,9 @@
 固定对话继续 `mailbox.py wait --worker ID --timeout 30`。接单后读取任务、所有补充、
 历史结果、撤回与有效目标。另一个 claim worker 的任务不接管。
 
+目标对话（含新建或复用的项目对话）必须运行在 `gpt-6.1-sol`、推理档位高（`xhigh`）；
+模型或档位不一致（如停在 `gpt-6-astra`）先切换再投递，否则会明显加快额度消耗。
+
 `routing.py resolve --task-id ID --snapshot SNAPSHOT [--topic TOPIC]` 的 snapshot 是本轮
 应用 `list_projects` 和 `list_threads/read_thread` 返回的本机项目及候选记录：
 `{"projects":[...],"threads":[...]}`。超过最近列表范围的候选可从本机只读 DB 找 ID，

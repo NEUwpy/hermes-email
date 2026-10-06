@@ -36,7 +36,8 @@ python scripts/session.py route
   用 `wait_threads(timeoutMs=0)` 查看固定对话是否活跃。
   已活跃且邮箱 mode 为 auto 时，仅打开对话，说明已在监听，不重复发启动消息。
   已停止、空闲或处于暂停状态时，用 `send_message_to_thread` 发送脚本返回的 prompt，
-  保留目标对话模型设置；当前用户“开始监听”的请求就是这次消息的明确授权。
+  并把目标对话模型设为 `gpt-6.1-sol`、推理档位高（`xhigh`）——不要保留旧的 `gpt-6-astra` 设置，
+  它会明显加快额度消耗；当前用户“开始监听”的请求就是这次消息的明确授权。
   随后用 `navigate_to_codex_page` 打开固定对话，并用一次有界 `wait_threads` 确认开始。
 - `needs_binding`：按首次绑定流程找到已有对话；有多个候选且无法唯一确定时询问一次。
 - `binding_path_changed`：不向旧目录的对话派发。核实用户更改路径的意图后重新绑定。
