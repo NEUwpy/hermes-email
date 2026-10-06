@@ -1,6 +1,6 @@
 # 固定对话启动与绑定
 
-目标：用户在这台电脑的任意 Codex 对话说“开始监听”，仍由同一个邮箱项目对话执行。
+目标：用户在这台电脑的任意 Codex 对话说“开始监听”，仍唤起同一个邮箱路由/监听对话。
 这是 Codex desktop 的路由流程；脚本只记录身份和生成启动数据，不自行调用私有 app API。
 
 ## 首次绑定
@@ -30,7 +30,8 @@ python scripts/session.py bind --project-id VERIFIED_PROJECT_ID `
 python scripts/session.py route
 ```
 
-- `current_listener`：当前就是固定对话，进入 SKILL.md 的 Codex 等待循环。
+- `current_listener`：当前就是固定对话，进入 SKILL.md 的等待循环；routes.json 已启用时
+  按 references/routing.md 派发，未启用时沿用原执行流程。
 - `dispatch`：先用 `list_projects` 和 `read_thread` 核实绑定仍指向正确的目录/host。
   用 `wait_threads(timeoutMs=0)` 查看固定对话是否活跃。
   已活跃且邮箱 mode 为 auto 时，仅打开对话，说明已在监听，不重复发启动消息。

@@ -2,12 +2,12 @@
 name: hermes-email
 description: >
   Hermes 与 Codex 的本地文件邮箱协作。用于手机经 Hermes 投递任务、在固定
-  Codex 对话中持续监听并执行指定项目的工作、查询状态、补充要求和反馈结果。
+  Codex 对话中持续监听、路由到项目对话执行工作、查询状态、补充要求和反馈结果。
   用户在任意 Codex 对话说“开始监听”时，可转到本机绑定的固定邮箱对话。
   使用可配置的共享目录和 Markdown 邮件，支持接单、完成、等待补充、失败与恢复。
 metadata:
-  version: "0.6.0"
-  updated_at: "2026-10-04"
+  version: "0.7.1"
+  updated_at: "2026-10-06"
 ---
 
 # Hermes Email
@@ -74,6 +74,16 @@ Hermes 是秘书与传话，Codex 干活，人做决策。三条约定：
 
 ## Codex：固定对话监听
 
+本机配置同目录 routes.json 的 enabled=true 时，本对话是**路由者**：读
+[references/routing.md](references/routing.md)，仍用 wait/claim 接单，核实项目/主题与
+应用身份后派发到项目对话；无合适对话时在对应已保存项目中新建并先核实 READY。
+执行者先用 routing.py accept 获得执行权，按有效任务工作，通过 routing.py finish
+沿用原 claim worker 收尾。路由者只核对终态后再接下一封，不同时执行已接受的任务。
+接受前投递失败先换令牌再回退，accepted 超时须核实旧执行已停止；不靠 PID 或超时抢占。
+项目对话不挂全邮箱消费者。模式暂停/停止和不一致绑定不自动恢复。
+
+路由未启用时沿用以下流程；安装与泛泛询问能力不会启用路由或创建对话：
+
 1. 经启动路由进入用户绑定的邮箱项目、固定对话。为该对话选择一个 worker ID，
    记住它，执行 `status`，再将模式设为 `auto`。不另建对话；不自动启动另一个 Codex。
 2. 调用 `wait --worker ID --timeout 30`。`timeout` 是空邮箱心跳，安静继续等待，
@@ -98,6 +108,27 @@ Hermes 是秘书与传话，Codex 干活，人做决策。三条约定：
 ## 记录与上下文
 
 邮箱是稳定的接单项目，实际工作项目可以不同。沿用本对话上下文并读取任务档案，
-不把项目切换等同于新开对话；上下文压缩后，从配置、当前任务、补充和结果恢复。
+路由启用时由对应项目对话执行，路由未启用时沿用固定对话；
+上下文压缩后，从配置、派发记录、当前任务、补充和结果恢复。
 暂停、停止、电脑休眠或会话退出都保留队列。跨电脑安装不会自动同步邮箱，
 本版本以双方访问同一台主机的本地目录为前提。
+
+## 监控哨兵（邮箱摘要 v2）
+
+cron 任务 `邮箱任务-结果提醒（全队列）`（每 1 分钟）运行 `~/AppData/Local/hermes/scripts/mailbox_digest_watch.py`，
+其输出作为 monitor 摘要注入。脚本必须是**确定性输出**（排好序、无时间戳/年龄），并配一个账本
+`scripts/.mailbox_reported.json`：
+
+1. `NEW:<文件夹>:<任务id>:<指纹>` —— 该任务刚进入终结状态，或结果内容真的变了。指纹按
+   `result.md`／`结果.md`／`result-work.md`／`handoff.json` 的**内容**计算：**重放同一单（内容不变）不再产生 NEW**，
+   真返工仍会产生；首次运行静默建账本，绝不回播历史。
+2. `running:<任务id> stalled=0|1` —— 该任务停在 正在执行 且**最后文件写入超过 15 分钟**（额度用尽、会话挂起等）。
+   另有**立即告警**规则：若执行方最近一轮失败（`thread_history` 里 `status='failed'`，如 `usageLimitExceeded`）
+   且该失败发生在**本任务最后一次写入之后**，立刻报 `stalled=1`，不等 15 分钟——额度中断正是这种形态。
+   只输出布尔值、不输出年龄，两次 tick 之间保持稳定；有失败原因时附 `cause=<错误码>[;resume=<恢复时间>][;at=<失败时刻>]`。
+3. 汇报只认 `NEW:` 与 `stalled=1`；两者皆无时回复 `[SILENT]`。
+4. 执行方失败的常见错误码：Codex `usageLimitExceeded`（额度用尽，会给出恢复时间）。这类任务会一直停在
+   正在执行，额度恢复后用 `mailbox.py recover --task-id <id> --worker <执行方> --note <续跑说明.md>` 回收重排
+   （执行方是运行中的任务，只能 `recover`，`resume` 只对 blocked/failed 有效），再让执行方续做。
+   **报进度时必须同时看两处**：任务目录的文件 mtime **和** `~/.codex/thread_history_1.sqlite` 的最近轮次状态——
+   只看文件 mtime 会把"执行方已死"误报成"正在跑"。

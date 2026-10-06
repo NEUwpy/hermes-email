@@ -39,9 +39,14 @@ def route(config_path, current_thread_id=None):
     if Path(listener["cwd"]).resolve() != root:
         return {"event": "binding_path_changed", "listener": listener, "mailbox_root": str(root)}
     skill = Path(__file__).resolve().parent.parent / "SKILL.md"
+    routes_file = Path(config_path).expanduser().resolve().parent / 'routes.json'
+    routing_enabled = routes_file.exists() and read_json(routes_file).get('enabled', False)
+    workflow = ("使用 references/routing.md：接单后核实项目并派发到对应项目对话，执行者 accept/finish，"
+                "本对话核对结果后继续等待；投递失败先核实/撤销未接受令牌再回退。"
+                if routing_enabled else "逐件执行邮件指定项目里的任务，完成后继续等待。")
     prompt = (f"用户要求开始监听 Hermes Email。使用 $hermes-email（{skill}），"
               f"配置文件 {Path(config_path).resolve()}。在这个固定对话中恢复邮箱监听，"
-              "逐件执行邮件指定项目里的任务，完成后继续等待，直到用户暂停或停止。")
+              + workflow + "直到用户暂停或停止；不得重复消费者或抢已接受任务。")
     return {"event": "current_listener" if current_thread_id == listener["thread_id"] else "dispatch",
             "listener": listener, "prompt": prompt}
 

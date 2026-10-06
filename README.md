@@ -1,8 +1,8 @@
 # Hermes Email
 
-手机上把任务交给 Hermes，Hermes 投递 Markdown 邮件；Codex 在固定对话中接单，
-执行邮件指定项目里的工作，留下结果，再通过 Hermes 回到手机会话。
-当前版本 **v0.6.0**，源码版本见 [VERSION.json](VERSION.json)，更新记录见 [CHANGELOG.md](CHANGELOG.md)。
+手机上把任务交给 Hermes，Hermes 投递 Markdown 邮件；Codex 在固定对话中接单。
+本机启用路由后，工作交给对应项目对话执行；固定对话核对结果后继续等待。
+当前版本 **v0.7.1**，源码版本见 [VERSION.json](VERSION.json)，更新记录见 [CHANGELOG.md](CHANGELOG.md)。
 
 ```text
 手机 → Hermes → 邮箱 → 正在执行 → 执行完毕
@@ -83,15 +83,19 @@ python scripts/install.py --hermes-home 'E:\HermesProfile' --config 'E:\本机�
 一个固定对话，发送：
 
 ```text
-使用 $hermes-email，进入邮箱监听模式。在这个对话中逐件执行邮件指定项目里的任务，
+使用 $hermes-email，进入邮箱监听模式。按本机已启用的路由规则派发到对应项目对话，
 完成一封后继续监听，直到我暂停或停止。
 ```
 
-此后这个对话是稳定的接单窗口。邮件可以指向不同工作目录，Codex 将命令的工作目录
-切到该项目，读取其约定、Git 状态和现有进度；不会因接到一封邮件而新开对话。
+此后这个对话是稳定的接单窗口。配置同目录 routes.json 的 enabled=true 时，按
+项目路径、子目录/主题复用最新合适的项目对话；没有匹配对话才在已保存项目中新建。
+执行者先 accept，再读项目约定、Git 状态与进度，完成后用路由包装器 finish。
+固定对话不同时执行已接受任务。投递失败只有确认未接受或旧执行停止后才回退。
+路由表格式、命令与恢复见 [references/routing.md](references/routing.md)。
 
 已有项目默认 `project_mode=existing`；只有任务明确要求创建时才用 `create`。
-项目路径不存在或描述不足时进入等待补充。新项目也沿用这个监听对话。
+项目路径不存在或描述不足时进入等待补充。未注册到应用的项目记录原因并在真实目录回退；
+不修改应用数据库冒充注册。安装不启用路由；没有 enabled 路由表时兼容原单对话执行。
 上下文压缩或重启后，使用任务档案与真实项目进度恢复，不保证无限保存全部聊天内容。
 
 Skill 需要一个正在工作的 Codex 会话。电脑休眠、应用关闭或监听对话退出后停止接单，
@@ -139,6 +143,7 @@ python scripts/mailbox.py cancel --task-id TASK_ID --note 'D:\Hermes Email\撤�
 - 更新时说明变更，执行测试，再提交源码并建立标签。
 - 检出已有版本：`git checkout v0.4.0`，可用标签以 `git tag --list` 为准；继续更新主线先 `git checkout main`。
 - v0.5.0 此次仅保留在工作区，未提交、未打标签；版本字段不表示已经发布。
+- v0.7.0 路由实现与 v0.7.1 监控哨兵修复已一并提交推送（未打标签）。
 - 本机更新：`git pull --ff-only`，再运行安装脚本检查链接和配置。已有配置与邮箱保留。
 
 ## 验证

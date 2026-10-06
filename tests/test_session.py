@@ -55,6 +55,14 @@ class SessionTests(unittest.TestCase):
         write_json(self.config, config)
         self.assertEqual(route(self.config, "another-thread")["event"], "binding_path_changed")
 
+    def test_enabled_routes_change_start_prompt_without_changing_binding(self):
+        bind(self.config,'project','thread','local',self.root)
+        before=read_json(self.config)
+        self.assertIn('逐件执行',route(self.config)['prompt'])
+        write_json(self.config.parent/'routes.json',{'schema_version':1,'enabled':True,'routes':[]})
+        self.assertIn('派发到对应项目对话',route(self.config)['prompt'])
+        self.assertEqual(read_json(self.config),before)
+
 
 if __name__ == "__main__":
     unittest.main()
