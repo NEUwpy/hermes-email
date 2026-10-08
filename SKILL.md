@@ -6,8 +6,8 @@ description: >
   用户在任意 Codex 对话说“开始监听”时，可转到本机绑定的固定邮箱对话。
   使用可配置的共享目录和 Markdown 邮件，支持接单、完成、等待补充、失败与恢复。
 metadata:
-  version: "0.7.2"
-  updated_at: "2026-10-06"
+  version: "0.7.3"
+  updated_at: "2026-10-08"
 ---
 
 # Hermes Email
@@ -55,6 +55,10 @@ Hermes 是秘书与传话，Codex 干活，人做决策。三条约定：
   模型与档位，不一致先切换再干活。
 - 收件模式、任务执行和回信发送是不同状态；不得把投递成功说成执行成功，
   不得把回信生成说成手机收到。
+- 额度口径：问「Codex 现在什么状态/还有多少额度」时，**直接读 Codex Tools 的
+  `%APPDATA%\com.carry.codex-tools\accounts.json`**（`scripts/quota.py`，子技能见
+  [references/quota-status.md](references/quota-status.md)）回答，不靠猜、不等执行方自报；
+  只输出账号、套餐、额度百分比、重置时间、状态与重置卡数量，令牌一律不读不打印。
 
 ## Hermes：从手机投递
 
@@ -129,8 +133,13 @@ cron 任务 `邮箱任务-结果提醒（全队列）`（每 1 分钟）运行 `
    另有**立即告警**规则：若执行方最近一轮失败（`thread_history` 里 `status='failed'`，如 `usageLimitExceeded`）
    且该失败发生在**本任务最后一次写入之后**，立刻报 `stalled=1`，不等 15 分钟——额度中断正是这种形态。
    只输出布尔值、不输出年龄，两次 tick 之间保持稳定；有失败原因时附 `cause=<错误码>[;resume=<恢复时间>][;at=<失败时刻>]`。
-3. 汇报只认 `NEW:` 与 `stalled=1`；两者皆无时回复 `[SILENT]`。
-4. 执行方失败的常见错误码：Codex `usageLimitExceeded`（额度用尽，会给出恢复时间）。这类任务会一直停在
+3. `codex_quota=<账号列表>` —— 直读 Codex Tools 的 `accounts.json`（见
+   [references/quota-status.md](references/quota-status.md)、`scripts/quota.py`）。
+   **分桶输出**（剩余按 10% 取整 + 粗状态标签），保证逐分钟确定性。
+   括号内状态：`OK` / `LOW`（剩余≤20%）/ `FULL`（已用≥100%）/ `STALE`（额度数据 >30 分钟没刷新）/ `ERROR`。
+   **所有账号 `FULL` 或 `STALE` 时报「额度耗尽 / 抓取异常」**，附 5 小时重置时间。
+4. 汇报只认 `NEW:`、`stalled=1` 与额度异常；皆无时回复 `[SILENT]`。
+5. 执行方失败的常见错误码：Codex `usageLimitExceeded`（额度用尽，会给出恢复时间）。这类任务会一直停在
    正在执行，额度恢复后用 `mailbox.py recover --task-id <id> --worker <执行方> --note <续跑说明.md>` 回收重排
    （执行方是运行中的任务，只能 `recover`，`resume` 只对 blocked/failed 有效），再让执行方续做。
    **报进度时必须同时看两处**：任务目录的文件 mtime **和** `~/.codex/thread_history_1.sqlite` 的最近轮次状态——

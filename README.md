@@ -2,7 +2,7 @@
 
 手机上把任务交给 Hermes，Hermes 投递 Markdown 邮件；Codex 在固定对话中接单。
 本机启用路由后，工作交给对应项目对话执行；固定对话核对结果后继续等待。
-当前版本 **v0.7.2**，源码版本见 [VERSION.json](VERSION.json)，更新记录见 [CHANGELOG.md](CHANGELOG.md)。
+当前版本 **v0.7.3**，源码版本见 [VERSION.json](VERSION.json)，更新记录见 [CHANGELOG.md](CHANGELOG.md)。
 
 ```text
 手机 → Hermes → 邮箱 → 正在执行 → 执行完毕
