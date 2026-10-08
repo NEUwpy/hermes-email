@@ -6,8 +6,8 @@ description: >
   用户在任意 Codex 对话说“开始监听”时，可转到本机绑定的固定邮箱对话。
   使用可配置的共享目录和 Markdown 邮件，支持接单、完成、等待补充、失败与恢复。
 metadata:
-  version: "0.7.3"
-  updated_at: "2026-10-08"
+  version: "0.7.4"
+  updated_at: "2026-10-09"
 ---
 
 # Hermes Email
@@ -138,8 +138,13 @@ cron 任务 `邮箱任务-结果提醒（全队列）`（每 1 分钟）运行 `
    **分桶输出**（剩余按 10% 取整 + 粗状态标签），保证逐分钟确定性。
    括号内状态：`OK` / `LOW`（剩余≤20%）/ `FULL`（已用≥100%）/ `STALE`（额度数据 >30 分钟没刷新）/ `ERROR`。
    **所有账号 `FULL` 或 `STALE` 时报「额度耗尽 / 抓取异常」**，附 5 小时重置时间。
-4. 汇报只认 `NEW:`、`stalled=1` 与额度异常；皆无时回复 `[SILENT]`。
-5. 执行方失败的常见错误码：Codex `usageLimitExceeded`（额度用尽，会给出恢复时间）。这类任务会一直停在
+4. `queued_oldest=<任务>:<时长桶>` 与 `executor_last_turn=<时长桶>` ——
+   前者是「邮箱里最久没被接单的任务」（分桶 `lt30m`/`30-60m`/`1-2h`/`2-6h`/`gt6h`），
+   后者是「执行方最近一轮 Codex 轮次距今多久」（同样分桶，读 `~/.codex/thread_history_1.sqlite`）。
+   **队列非空 且 `executor_last_turn` 为 `1-2h`/`2-6h`/`gt6h` → 报「执行方停摆」**
+   （典型成因：额度用尽后未重启，此时没有任务在 `正在执行`，`stalled` 规则抓不到）。
+5. 汇报只认 `NEW:`、`stalled=1`、额度异常与执行方停摆；皆无时回复 `[SILENT]`。
+6. 执行方失败的常见错误码：Codex `usageLimitExceeded`（额度用尽，会给出恢复时间）。这类任务会一直停在
    正在执行，额度恢复后用 `mailbox.py recover --task-id <id> --worker <执行方> --note <续跑说明.md>` 回收重排
    （执行方是运行中的任务，只能 `recover`，`resume` 只对 blocked/failed 有效），再让执行方续做。
    **报进度时必须同时看两处**：任务目录的文件 mtime **和** `~/.codex/thread_history_1.sqlite` 的最近轮次状态——
