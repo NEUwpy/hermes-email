@@ -2,7 +2,7 @@
 
 手机上把任务交给 Hermes，Hermes 投递 Markdown 邮件；Codex 在固定对话中接单。
 本机启用路由后，工作交给对应项目对话执行；固定对话核对结果后继续等待。
-当前版本 **v0.7.4**，源码版本见 [VERSION.json](VERSION.json)，更新记录见 [CHANGELOG.md](CHANGELOG.md)。
+当前版本 **v0.7.5**，源码版本见 [VERSION.json](VERSION.json)，更新记录见 [CHANGELOG.md](CHANGELOG.md)。
 
 ```text
 手机 → Hermes → 邮箱 → 正在执行 → 执行完毕
@@ -44,6 +44,11 @@ Set-Location "$env:USERPROFILE\ai-skills\hermes-email"
 python scripts/install.py
 ```
 
+安装完成后，把输出的邮箱目录添加为 Codex 项目，在其中建立一个固定对话，
+复制邮箱里的 `开始监听.md` 提示发送给 Codex。它会核实本机身份、绑定该对话，
+按你的授权启用项目路由，并设置**每 30 分钟一次的监听存活检查**。
+每台电脑分别绑定自己的项目和对话，不复制别人的配置或自动化。
+
 安装结果：
 
 - 优先创建 `D:\Hermes Email`，没有 D 盘时创建 `C:\Hermes Email`。
@@ -84,7 +89,8 @@ python scripts/install.py --hermes-home 'E:\HermesProfile' --config 'E:\本机�
 
 ```text
 使用 $hermes-email，进入邮箱监听模式。按本机已启用的路由规则派发到对应项目对话，
-完成一封后继续监听，直到我暂停或停止。
+完成一封后继续监听，直到我暂停或停止。核实并绑定本对话后启用项目路由，
+在本对话设置每 30 分钟一次的监听存活检查；已有检查任务就更新，不重复创建。
 ```
 
 此后这个对话是稳定的接单窗口。配置同目录 routes.json 的 enabled=true 时，按
@@ -100,6 +106,17 @@ python scripts/install.py --hermes-home 'E:\HermesProfile' --config 'E:\本机�
 
 Skill 需要一个正在工作的 Codex 会话。电脑休眠、应用关闭或监听对话退出后停止接单，
 已投递任务仍在磁盘上；回到固定对话再次进入监听即可恢复。
+
+### 每半小时检查监听是否存活
+
+持续接单用 `wait --timeout 30`，其中 30 是等待的**秒数**；每半小时的检查是
+Codex 应用的 heartbeat 自动化，用来发现并恢复意外退出的监听，不是每半小时才收一次邮件。
+创建或更新方法、精简提示见 [references/startup.md](references/startup.md#监听存活检查)。
+
+已有监听或邮件正在执行时沿用；只在绑定一致、邮箱为 auto 且监听已退出时恢复。
+暂停、停止或绑定不一致时不自动启动。正常和空邮箱时保持安静，异常或实质结果才反馈。
+检查需要电脑醒着、Codex 应用和相应工具可用；休眠、关闭应用或额度不足时不保证即时恢复。
+安装脚本只生成启动提示，不自行创建对话、自动化或后台监听。
 
 ## 手机投递与 Hermes 转达
 
@@ -142,8 +159,7 @@ python scripts/mailbox.py cancel --task-id TASK_ID --note 'D:\Hermes Email\撤�
 - 修复用 patch；新增兼容能力用 minor；不兼容协议/配置变化用 major。
 - 更新时说明变更，执行测试，再提交源码并建立标签。
 - 检出已有版本：`git checkout v0.4.0`，可用标签以 `git tag --list` 为准；继续更新主线先 `git checkout main`。
-- v0.5.0 此次仅保留在工作区，未提交、未打标签；版本字段不表示已经发布。
-- v0.7.0 路由实现与 v0.7.1 监控哨兵修复已一并提交推送；发布标签为 `v0.7.1`（v0.7.0 未单独打标签）。
+- 已发布版本以远端标签为准；主线可能包含尚未打标签的改动。
 - 本机更新：`git pull --ff-only`，再运行安装脚本检查链接和配置。已有配置与邮箱保留。
 
 ## 验证

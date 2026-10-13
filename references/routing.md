@@ -72,7 +72,7 @@ finish 后中断：status 核实归档结果 SHA 补记终态，不重跑业务�
 路由者用 `abort --task-id ID --token TOKEN --result 撤回检查点` 安全 finish failed。
 
 路由者等待/派发/等结果时可调用 `heartbeat --phase waiting|dispatching|awaiting_executor`。
-五小时检查同时看绑定、mailbox、派发记录和应用 turn/tool；项目任务 accepted/running 是有效工作，
+每半小时的存活检查同时看绑定、mailbox、派发记录和应用 turn/tool；项目任务 accepted/running 是有效工作，
 不再起消费者。paused/stopped 不开启，绑定不一致不恢复。空 timeout 安静继续。
 
 CLI/app-server 独立 resume 不能抢桌面 active writer。即时派发使用桌面工具；heartbeat
